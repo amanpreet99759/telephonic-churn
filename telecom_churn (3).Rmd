@@ -1,0 +1,352 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+# Import datasets
+require(readr)
+tel_ch<-read.csv("churn.csv")
+View(tel_ch)
+
+```
+```{r}
+# Get a feel of the data at hand
+head(tel_ch)
+summary(tel_ch)
+```
+
+```{r}
+
+
+
+#Counting No. of Unique Values for each variable
+for(i in 1:ncol(tel_ch))
+{
+  tel_ch$UniqueRecords[i]<-length(unique(tel_ch[,i]))
+  print( tel_ch$UniqueRecords[i])
+}
+```
+```{r}
+#No. of Records for each Variable
+
+print(nrow(tel_ch))
+```
+
+
+```{r}
+require(ggplot2)
+
+summary(tel_ch$TotalCharges)
+ggplot(tel_ch, aes(x = (gender), fill = as.factor(Churn))) + geom_bar(position = 'fill')
+```
+
+
+
+```{r}
+require(dplyr)
+# Avoid case mismatch possibility
+tel_ch <- mutate_if(tel_ch, is.character, tolower)
+
+# Check missing values
+colSums(is.na(tel_ch))
+```
+
+```{r}
+# Check duplicates
+sum(duplicated(tel_ch))
+```
+
+```{r}
+require(Amelia)
+missmap(tel_ch,col=c("blue","red"))
+```
+```{r}
+max(tel_ch$tenure)
+min(tel_ch$tenure)
+#View(tel_ch)
+```
+```{r}
+tel_ch <- mutate(tel_ch, tenure_year = tenure)
+
+tel_ch$tenure_year[tel_ch$tenure_year >=0 & tel_ch$tenure_year <= 12] <- '0-1 year'
+tel_ch$tenure_year[tel_ch$tenure_year > 12 &tel_ch$tenure_year<= 24] <- '1-2 years'
+tel_ch$tenure_year[tel_ch$tenure_year > 24 & tel_ch$tenure_year <= 36] <- '2-3 years'
+tel_ch$tenure_year[tel_ch$tenure_year> 36 & tel_ch$tenure_year <= 48] <- '3-4 years'
+tel_ch$tenure_year[tel_ch$tenure_year > 48 & tel_ch$tenure_year <= 60] <- '4-5 years'
+tel_ch$tenure_year[tel_ch$tenure_year > 60 & tel_ch$tenure_year <= 72] <- '5-6 years'
+
+tel_ch$tenure_year <- as.factor(tel_ch$tenure_year)
+
+summary(tel_ch$tenure_year)
+
+#After checking the distribution of data in each tenure_bin,
+#maximum number of customers have a tenure of either 0-1 years and followed by 5-6 years.
+```
+```{r}
+# Ignore the variables with more levels while predicting the model
+# Columns "customerID" and "tenure" having more levels
+tel_ch <- select(tel_ch,-customerID,-tenure)
+#View(tel_ch)
+```
+
+```{r}
+#The value of the following columns affecting the model and introducing the NA value for "No phone service" and  and "No internet service" need to cleanup the data for these columns MultipleLine,OnlineSecurity,OnlineBackup,DeviceProtection,TechSupport,StreamingTV,StreamingMovies
+
+tel_ch[,c(6,8,9,10,11,12,13)] <- sapply(tel_ch[ ,c(6,8,9,10,11,12,13)],as.character)
+
+```
+
+```{r}
+# convert factor variables into character variables before changing the values
+tel_ch$MultipleLines[tel_ch$MultipleLines=="no phone service"] <- "no"
+tel_ch$OnlineSecurity[tel_ch$OnlineSecurity=="no internet service"] <- "no"
+tel_ch$OnlineBackup[tel_ch$OnlineBackup=="no internet service"] <- "no"
+tel_ch$DeviceProtection[tel_ch$DeviceProtection=="no internet service"] <- "no"
+tel_ch$TechSupport[tel_ch$TechSupport=="no internet service"] <- "no"
+tel_ch$StreamingTV[tel_ch$StreamingTV=="no internet service"] <- "no"
+tel_ch$StreamingMovies[tel_ch$StreamingMovies=="no internet service"] <- "no"
+```
+
+```{r}
+# converting character variables into factor variables
+tel_ch[,c(6,8,9,10,11,12,13)] <- sapply(tel_ch[ ,c(6,8,9,10,11,12,13)],as.factor)
+```
+
+
+```{r}
+# check the number of NA rows if it is relatively small in number then ignore those rows from the analysis
+tel_ch <- na.omit(tel_ch)
+```
+
+
+```{r}
+############  uni-variate analysis  ############
+
+########## EDA Begins ############
+#monthly charges
+##### no outliers detected ############
+plot(quantile(tel_ch$MonthlyCharges , seq(0,1,0.01))) 
+quantile(tel_ch$MonthlyCharges , seq(0,1,0.01))
+```
+
+
+```{r}
+
+
+#total charges 
+##### no outliers detected ############
+plot(quantile(tel_ch$TotalCharges , seq(0,1,0.01))) # no Outlier 
+quantile(tel_ch$TotalCharges, seq(0,1,0.01))
+
+```
+```{r}
+
+tel_ch$Churn<- if_else(tel_ch$Churn=='yes',1,0)
+
+```
+
+
+```{r}
+####### to check count of each column ######
+for(i in 1:ncol(tel_ch))
+{
+  print( table(tel_ch[,i]))
+}
+#View(tel_ch)
+```
+
+
+```{r}
+# normalizing the data 
+tel_ch[,c(17,18)] <- sapply(tel_ch[,c(17,18)], scale)
+
+head(tel_ch[,17:18])
+#glimpse(tel_ch) 
+# EDA Complete...
+```
+```{r}
+
+#### ---- Model Building ---- ####
+
+round(prop.table(table(tel_ch$Churn)) * 100)
+# Target class has huge imbalance
+```
+```{r}
+
+##### dummy making #########
+
+require(dummies)#package
+dummy_data <- dummy.data.frame(as.data.frame(tel_ch))
+head(dummy_data)
+```
+
+
+```{r}
+require(dplyr)
+require(car)
+require(caTools)
+# set the seed it will output same output when ever the model is executed
+set.seed(123)
+
+```
+```{r}
+# sample the input data with 70% for training and 30% for testing
+index <- sample.split(dummy_data$Churn,SplitRatio=0.70)
+trn.data <- dummy_data[index, ]
+val.data <- dummy_data[!index,]
+
+```
+
+```{r}
+
+# logistic regression model on top training the data
+model_1 <- glm(Churn ~ . , data = trn.data , family = 'binomial')
+
+summary(model_1)
+```
+
+```{r}
+
+model_2 <- step(model_1)
+summary(model_2)
+
+
+
+sort(vif(model_2))
+```
+
+```{r}
+require(dplyr)
+require(car)
+sort(vif(model_2))
+
+```
+
+```{r}
+model_3 <- glm(formula = Churn ~ Dependentsno + PhoneServiceno + MultipleLinesno + 
+    InternetServicedsl + `InternetServicefiber optic` + OnlineBackupno + 
+    DeviceProtectionno + StreamingTVno + StreamingMoviesno + 
+    `Contractmonth-to-month` + `Contractone year` + PaperlessBillingno + 
+    `PaymentMethodelectronic check` + TotalCharges + 
+    `tenure_year0-1 year` + `tenure_year2-3 years`, family = "binomial", 
+    data = trn.data)
+
+summary(model_3)
+
+sort(vif(model_3))
+```
+
+```{r}
+prob_churn <- predict(model_3 ,  newdata = val.data , type = 'response')
+
+summary(prob_churn)
+```
+
+
+```{r}
+pred_churn <- as.factor(ifelse(prob_churn > 0.29 , 1, 0))
+
+act_churn <- as.factor(val.data$Churn)
+
+require(caret)
+confusionMatrix(pred_churn, act_churn, positive = '1')
+```
+```{r}
+#Logistic Regression with a cutoff probability value of 0.29 gives us better values of accuracy , sensitivity and specificity in the validation data.
+
+```
+
+
+```{r}
+### Decision tree ################
+require(caTools)
+require(rpart.plot)
+# set the seed it will output same output when ever the model is executed
+set.seed(123)
+
+```
+
+
+
+```{r}
+# sample the input data with 70% for training and 30% for testing
+tel_ch$Churn <- as.factor(tel_ch$Churn)
+  
+index = sample.split(tel_ch$Churn, SplitRatio = 0.7)
+trn.data1= tel_ch[index,]
+val.data1= tel_ch[!index,]
+
+```
+
+```{r}
+ #Training
+  Dtree = rpart(Churn ~., data = trn.data1, method = "class")
+  summary(Dtree)
+```
+
+```{r}
+  #Predicting 
+  DTPred <- predict(Dtree,type = "class", newdata = val.data1[,-38])
+ 
+```
+
+```{r}
+### confusion matrix validation #####
+confusionMatrix(val.data1$Churn, DTPred)
+```
+
+```{r}
+#The decision tree model (accuracy - 77.44%) gives slightly better accuracy with respect to the logistic regression model (accuracy 81.99%). The sensitivity is also better in case of Decision tree . However, the specificity has decreased  in case of Decision Tree as compared to logistic regression model.
+```
+
+```{r}
+### Random Forest ################
+require(caTools)
+library(randomForest)
+# set the seed it will output same output when ever the model is executed
+set.seed(123)
+```
+
+```{r}
+# sample the input data with 70% for training and 30% for testing
+tel_ch$Churn <- as.factor(tel_ch$Churn)
+  
+index = sample.split(tel_ch$Churn, SplitRatio = 0.7)
+trn.data2 = tel_ch[index,]
+val.data2= tel_ch[!index,]
+```
+```{r}
+#Training the RandomForest Model
+model.rf <- randomForest(Churn ~ ., data=trn.data2, proximity=FALSE,importance = FALSE,
+                        ntree=500,mtry=4, do.trace=FALSE)
+model.rf
+```
+```{r}
+#Predicting on the validation set and checking the Confusion Matrix.
+testPred <- predict(model.rf, newdata=val.data2[,-38])
+table(testPred, val.data2$Churn)
+
+confusionMatrix(val.data2$Churn, testPred)
+```
+```{r}
+tree_2 <- rpart(Churn ~ ., data = val.data2,
+control = rpart.control(cp = .010))
+
+prp(tree_2)
+```
+
+
+```{r}
+#The basic RandomForest model gives best accuracy as compared to logistic regression and Decision Tree.
+
+```
+
+
+
+
+
+
+
+
+
+
